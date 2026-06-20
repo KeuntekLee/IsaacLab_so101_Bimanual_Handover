@@ -21,6 +21,8 @@ assets/robots/
 media/
   so101_bimanual_handover_success_01.mp4
   so101_bimanual_handover_success_02.mp4
+  so101_bimanual_handover_success_01.gif
+  so101_bimanual_handover_success_02.gif
 
 ros2/SO-ARM101_MoveIt_IsaacSim/
   src/so_arm_description/
@@ -36,8 +38,17 @@ The repository does not include generated datasets, checkpoints, Isaac Lab logs,
 
 Two successful ACT inference rollouts are included as scene-wide perspective videos:
 
-- [Success rollout 01](media/so101_bimanual_handover_success_01.mp4)
-- [Success rollout 02](media/so101_bimanual_handover_success_02.mp4)
+### Success rollout 01
+
+[![Success rollout 01](media/so101_bimanual_handover_success_01.gif)](media/so101_bimanual_handover_success_01.mp4)
+
+[Open MP4](media/so101_bimanual_handover_success_01.mp4)
+
+### Success rollout 02
+
+[![Success rollout 02](media/so101_bimanual_handover_success_02.gif)](media/so101_bimanual_handover_success_02.mp4)
+
+[Open MP4](media/so101_bimanual_handover_success_02.mp4)
 
 These videos were recorded from an additional perspective camera, not from the policy input cameras. The ACT policy still uses the two gripper cameras and top camera as observations.
 
