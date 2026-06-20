@@ -38,15 +38,19 @@ Two successful ACT inference rollouts are included as scene-wide perspective vid
 
 ### Success rollout 01
 
-https://github.com/user-attachments/assets/c8a856b4-f56a-434c-9a9c-480f39db47bf
 
-[Open MP4](media/so101_bimanual_handover_success_01.mp4)
+
+https://github.com/user-attachments/assets/bccccc59-c833-4020-bf94-855765abd518
+
+
 
 ### Success rollout 02
 
-https://github.com/user-attachments/assets/ad5ae99a-e2fd-47b9-95ab-741c4ca46913
 
-[Open MP4](media/so101_bimanual_handover_success_02.mp4)
+
+https://github.com/user-attachments/assets/87b51cc0-8bcf-4889-8e74-323db5a6ffdd
+
+
 
 These videos were recorded from an additional perspective camera, not from the policy input cameras. The ACT policy still uses the two gripper cameras and top camera as observations.
 
