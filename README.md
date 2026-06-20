@@ -271,3 +271,4 @@ export SO101_BIMANUAL_ACT_CHECKPOINT=/path/to/checkpoints/100000/pretrained_mode
 - ACT inference can run policy computation on CUDA while Isaac Lab simulation runs on CPU.
 - Top/gripper cameras are included for LeRobot-compatible visual observations.
 - The SO101 robot config resolves `assets/robots/SO-ARM101-USD.usd` relative to the Isaac Lab root after overlay installation.
+- Upload generated dataset on https://huggingface.co/datasets/HAEILx/IsaacLab_so101_Bimanual_Handover
