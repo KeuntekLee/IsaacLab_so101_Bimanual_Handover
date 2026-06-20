@@ -24,6 +24,8 @@ ros2/**/install/
 ros2/**/log/
 
 *.mp4
+!media/
+!media/*.mp4
 *.parquet
 *.jsonl
 *.log

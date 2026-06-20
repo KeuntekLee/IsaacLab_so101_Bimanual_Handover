@@ -18,6 +18,10 @@ source/isaaclab_assets/isaaclab_assets/robots/
 assets/robots/
   SO-ARM101-USD.usd
 
+media/
+  so101_bimanual_handover_success_01.mp4
+  so101_bimanual_handover_success_02.mp4
+
 ros2/SO-ARM101_MoveIt_IsaacSim/
   src/so_arm_description/
   src/so_arm_moveit_config/
@@ -27,6 +31,15 @@ ros2/SO-ARM101_MoveIt_IsaacSim/
 ```
 
 The repository does not include generated datasets, checkpoints, Isaac Lab logs, ROS2 `build/`, ROS2 `install/`, or ROS2 `log/` outputs.
+
+## Demo Videos
+
+Two successful ACT inference rollouts are included as scene-wide perspective videos:
+
+- [Success rollout 01](media/so101_bimanual_handover_success_01.mp4)
+- [Success rollout 02](media/so101_bimanual_handover_success_02.mp4)
+
+These videos were recorded from an additional perspective camera, not from the policy input cameras. The ACT policy still uses the two gripper cameras and top camera as observations.
 
 ## Install Into Isaac Lab
 
@@ -203,6 +216,28 @@ source /home/keuntek/miniforge3/bin/activate isaacsim
   --success-hold-steps 60
 ```
 
+To record successful scene-wide MP4 videos while running inference:
+
+```bash
+LIVESTREAM=1 ./isaaclab.sh -p scripts/environments/state_machine/pick_and_place_so101_bimanual_handover_act_inference.py \
+  --num_envs 1 \
+  --num_episodes 0 \
+  --target-successes 2 \
+  --device cpu \
+  --enable_cameras \
+  --policy-device cuda \
+  --checkpoint /path/to/checkpoints/100000/pretrained_model \
+  --n-action-steps 50 \
+  --max_episode_steps 2500 \
+  --success-hold-steps 60 \
+  --perspective-video-dir ./media \
+  --perspective-video-width 960 \
+  --perspective-video-height 540 \
+  --perspective-video-fps 30
+```
+
+`--target-successes` stops after the requested number of successful episodes. Failed episodes are discarded from the perspective video output.
+
 You can also set the checkpoint path with:
 
 ```bash
@@ -215,6 +250,7 @@ export SO101_BIMANUAL_ACT_CHECKPOINT=/path/to/checkpoints/100000/pretrained_mode
 - If the bridge prints `moveit_service_unavailable`, confirm that `ros2 launch so_arm_moveit_config demo.launch.py` is running and that `/plan_kinematic_path` exists.
 - If Isaac Lab times out waiting for a trajectory, check `/isaaclab/plan_status` and the bridge terminal for `FAILED`, `BUSY`, or MoveIt error codes.
 - If planning frequently fails in a specific randomized grid region, reduce the grid range or increase `--allowed-planning-time`/`--num-planning-attempts` on the bridge server.
+- If ACT inference produces nearly static arm actions from the camera policy, run with `LIVESTREAM=1` and `--enable_cameras`. This can change the camera/rendering path used by Isaac Sim.
 - If recorded videos look faster than the live simulator, compare simulation time rather than wall-clock time. The dataset is written at 30 Hz simulation time; a slow live simulation will replay faster as a video.
 
 ## Notes

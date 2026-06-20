@@ -70,6 +70,21 @@ parser.add_argument(
 )
 parser.add_argument("--task", type=str, default="Robot1 picks cube -> handover to Robot2 -> Robot2 places in bin")
 parser.add_argument("--debug-actions", action="store_true", default=False, help="Print first policy actions.")
+parser.add_argument(
+    "--target-successes",
+    type=int,
+    default=0,
+    help="Stop after this many successful episodes. 0 uses --num_episodes attempt count.",
+)
+parser.add_argument(
+    "--perspective-video-dir",
+    type=str,
+    default=None,
+    help="Directory for scene-wide perspective MP4 videos. Only successful episodes are kept.",
+)
+parser.add_argument("--perspective-video-width", type=int, default=960)
+parser.add_argument("--perspective-video-height", type=int, default=540)
+parser.add_argument("--perspective-video-fps", type=int, default=30)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -82,6 +97,7 @@ from isaacsim.core.utils.rotations import euler_angles_to_quat
 
 import isaaclab.sim as sim_utils
 import isaaclab_tasks  # noqa: F401
+import isaaclab.utils.math as math_utils
 from isaaclab.envs import ManagerBasedEnv
 from isaaclab.sensors import TiledCameraCfg
 
@@ -113,6 +129,9 @@ JOINT_LIMIT_SATURATION_TOL = 1.0e-3
 TOP_CAMERA_POS = (0.40, -0.06, 0.92)
 TOP_CAMERA_FOCAL_LENGTH = 10.0
 TOP_CAMERA_ROT_EULER_DEG = (0.0, 0.0, 0.0)
+PERSPECTIVE_CAMERA_POS = (0.86, -0.82, 0.50)
+PERSPECTIVE_CAMERA_TARGET = (0.38, -0.06, 0.10)
+PERSPECTIVE_CAMERA_FOCAL_LENGTH = 14.0
 
 
 def get_ordered_joint_ids(robot, joint_names: Sequence[str] = ISAAC_SO101_JOINT_NAMES) -> list[int]:
@@ -160,6 +179,14 @@ def camera_rgb_to_uint8(camera_data: torch.Tensor, env_idx: int = 0) -> np.ndarr
     return np.ascontiguousarray(rgb_frame).copy()
 
 
+def look_at_quat_opengl(pos: Sequence[float], target: Sequence[float]) -> tuple[float, float, float, float]:
+    eyes = torch.tensor([pos], dtype=torch.float32)
+    targets = torch.tensor([target], dtype=torch.float32)
+    rot_mat = math_utils.create_rotation_matrix_from_view(eyes, targets, up_axis="Z", device="cpu")
+    quat = math_utils.quat_from_matrix(rot_mat)[0].detach().cpu().tolist()
+    return tuple(float(value) for value in quat)
+
+
 def get_record_interval(control_dt: float, policy_fps: int) -> tuple[int, float]:
     control_hz = 1.0 / control_dt
     record_interval = int(round(control_hz / policy_fps))
@@ -191,6 +218,96 @@ def add_top_camera_to_scene_cfg(scene_cfg) -> None:
             convention="opengl",
         ),
     )
+
+
+def add_perspective_camera_to_scene_cfg(scene_cfg) -> None:
+    scene_cfg.camera_perspective = TiledCameraCfg(
+        prim_path="{ENV_REGEX_NS}/CameraPerspective",
+        update_period=0.0,
+        height=args_cli.perspective_video_height,
+        width=args_cli.perspective_video_width,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(
+            projection_type="pinhole",
+            f_stop=1000.0,
+            focal_length=PERSPECTIVE_CAMERA_FOCAL_LENGTH,
+            focus_distance=float(np.linalg.norm(np.asarray(PERSPECTIVE_CAMERA_TARGET) - np.asarray(PERSPECTIVE_CAMERA_POS))),
+        ),
+        offset=TiledCameraCfg.OffsetCfg(
+            pos=PERSPECTIVE_CAMERA_POS,
+            rot=look_at_quat_opengl(PERSPECTIVE_CAMERA_POS, PERSPECTIVE_CAMERA_TARGET),
+            convention="opengl",
+        ),
+    )
+
+
+class PerspectiveVideoRecorder:
+    def __init__(self, output_dir: str | None, fps: int) -> None:
+        self.enabled = output_dir is not None
+        self.output_dir = Path(output_dir).expanduser() if output_dir is not None else None
+        self.fps = fps
+        self.cv2 = None
+        self.writer = None
+        self.tmp_path: Path | None = None
+        self.frame_count = 0
+        self.episode_id = 0
+        if self.enabled:
+            if fps <= 0:
+                raise ValueError("--perspective-video-fps must be positive.")
+            import cv2
+
+            self.cv2 = cv2
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def start_episode(self, episode_id: int) -> None:
+        if not self.enabled:
+            return
+        self._close_writer()
+        self.episode_id = episode_id
+        self.frame_count = 0
+        self.tmp_path = self.output_dir / f".episode_{episode_id:03d}_pending.mp4"
+        if self.tmp_path.exists():
+            self.tmp_path.unlink()
+
+    def write_frame(self, rgb_frame: np.ndarray) -> None:
+        if not self.enabled:
+            return
+        if self.tmp_path is None:
+            self.start_episode(self.episode_id + 1)
+        if self.writer is None:
+            height, width = rgb_frame.shape[:2]
+            fourcc = self.cv2.VideoWriter_fourcc(*"mp4v")
+            self.writer = self.cv2.VideoWriter(str(self.tmp_path), fourcc, float(self.fps), (width, height))
+            if not self.writer.isOpened():
+                raise RuntimeError(f"Failed to open perspective video writer: {self.tmp_path}")
+        bgr_frame = self.cv2.cvtColor(rgb_frame, self.cv2.COLOR_RGB2BGR)
+        self.writer.write(bgr_frame)
+        self.frame_count += 1
+
+    def finish_episode(self, success: bool, success_index: int) -> None:
+        if not self.enabled:
+            return
+        self._close_writer()
+        if self.tmp_path is None:
+            return
+        if success and self.frame_count > 0:
+            final_path = self.output_dir / f"so101_bimanual_handover_success_{success_index:02d}.mp4"
+            if final_path.exists():
+                final_path.unlink()
+            self.tmp_path.replace(final_path)
+            print(f"[Video] saved {final_path} frames={self.frame_count}", flush=True)
+        elif self.tmp_path.exists():
+            self.tmp_path.unlink()
+        self.tmp_path = None
+        self.frame_count = 0
+
+    def close(self) -> None:
+        self._close_writer()
+
+    def _close_writer(self) -> None:
+        if self.writer is not None:
+            self.writer.release()
+            self.writer = None
 
 
 def build_policy_observation(
@@ -249,10 +366,12 @@ def resolve_policy_device(policy_device: str) -> str:
 
 def main():
     print("[DIAG] main() entered", flush=True)
-    if args_cli.success_hold_steps < 0:
-        raise ValueError("--success-hold-steps must be non-negative.")
     if not args_cli.checkpoint:
         raise ValueError("Provide --checkpoint or set SO101_BIMANUAL_ACT_CHECKPOINT.")
+    if args_cli.success_hold_steps < 0:
+        raise ValueError("--success-hold-steps must be non-negative.")
+    if args_cli.target_successes < 0:
+        raise ValueError("--target-successes must be non-negative.")
     env_cfg = SO101BimanualHandoverEnvCfg()
     env_cfg.sim.device = args_cli.device
     env_cfg.sim.use_fabric = not args_cli.disable_fabric
@@ -261,6 +380,8 @@ def main():
         raise RuntimeError("ACT inference script currently supports exactly one Isaac Lab environment.")
     env_cfg.num_rerenders_on_reset = max(env_cfg.num_rerenders_on_reset, 20)
     add_top_camera_to_scene_cfg(env_cfg.scene)
+    if args_cli.perspective_video_dir is not None:
+        add_perspective_camera_to_scene_cfg(env_cfg.scene)
 
     control_dt = env_cfg.sim.dt * env_cfg.decimation
     policy_interval, control_hz = get_record_interval(control_dt, args_cli.policy_fps)
@@ -285,10 +406,15 @@ def main():
     gripper_cam_r1 = env.scene["camera_ego_1"]
     gripper_cam_r2 = env.scene["camera_ego_2"]
     top_camera = env.scene["camera_top"]
+    perspective_camera = env.scene["camera_perspective"] if args_cli.perspective_video_dir is not None else None
     ee_idx_1 = robot1.body_names.index("gripper")
     ee_idx_2 = robot2.body_names.index("gripper")
     ordered_jids_1 = get_ordered_joint_ids(robot1)
     ordered_jids_2 = get_ordered_joint_ids(robot2)
+    perspective_video_recorder = PerspectiveVideoRecorder(
+        args_cli.perspective_video_dir,
+        args_cli.perspective_video_fps,
+    )
 
     actions = torch.zeros((env.num_envs, env.action_manager.total_action_dim), dtype=torch.float32, device=env.device)
     current_joint_target_1 = robot1.data.joint_pos[:, ordered_jids_1].clone()
@@ -305,6 +431,15 @@ def main():
     print(f"n_action_steps: {args_cli.n_action_steps}")
     print(f"Max episode steps: {args_cli.max_episode_steps}")
     print(f"Success hold steps: {args_cli.success_hold_steps}")
+    print(f"Target successes: {args_cli.target_successes}")
+    if perspective_video_recorder.enabled:
+        print(
+            "Perspective video: "
+            f"dir={perspective_video_recorder.output_dir} "
+            f"size={args_cli.perspective_video_width}x{args_cli.perspective_video_height} "
+            f"fps={args_cli.perspective_video_fps} "
+            f"pos={PERSPECTIVE_CAMERA_POS} target={PERSPECTIVE_CAMERA_TARGET}"
+        )
     print(f"Action space: {env.action_manager.total_action_dim}D (Robot1[6] + Robot2[6])")
     print(f"Joint order per robot: {ISAAC_SO101_JOINT_NAMES}")
     print(f"{'=' * 60}\n", flush=True)
@@ -334,6 +469,7 @@ def main():
         "cube_near_bin": False,
         "success_zone": False,
     }
+    perspective_video_recorder.start_episode(attempted_episodes + 1)
 
     def reset_episode_state() -> None:
         nonlocal episode_step, policy_query_count, saturation_count, success_hold_count
@@ -409,6 +545,9 @@ def main():
         attempted_episodes += 1
         saved_successes += int(success)
         success_distance = metrics["cube_bin_xy"]
+        if perspective_video_recorder.enabled and perspective_camera is not None:
+            env.sim.render()
+            perspective_video_recorder.write_frame(camera_rgb_to_uint8(perspective_camera.data.output["rgb"]))
         print(
             f"[Episode {attempted_episodes}] "
             f"success={success} reason={reason} distance_xy={success_distance[0].item():.4f} "
@@ -420,6 +559,7 @@ def main():
             f"steps={episode_step}",
             flush=True,
         )
+        perspective_video_recorder.finish_episode(success, saved_successes)
 
     def maybe_print_milestones(metrics: dict[str, torch.Tensor]) -> None:
         nonlocal milestone_flags
@@ -467,6 +607,10 @@ def main():
                 loop_exit_reason = "simulation_app_not_running"
                 print("[DIAG] main loop exit: simulation_app.is_running() returned False", flush=True)
                 break
+            if args_cli.target_successes > 0 and saved_successes >= args_cli.target_successes:
+                loop_exit_reason = "target_successes_reached"
+                print(f"\n[Done] Saved {saved_successes} successful episodes. attempts={attempted_episodes}")
+                break
             if args_cli.num_episodes > 0 and attempted_episodes >= args_cli.num_episodes:
                 loop_exit_reason = "target_reached"
                 print(f"\n[Done] Completed {attempted_episodes} episodes. successes={saved_successes}")
@@ -479,6 +623,7 @@ def main():
                     success = bool((metrics["cube_bin_xy"] < args_cli.success_threshold)[0].item())
                     finish_episode(success, "max_steps", metrics)
                     reset_episode_state()
+                    perspective_video_recorder.start_episode(attempted_episodes + 1)
                     continue
 
                 if episode_step % policy_interval == 0:
@@ -492,6 +637,10 @@ def main():
                         gripper_cam_r2.data.output["rgb"],
                         top_camera.data.output["rgb"],
                     )
+                    if perspective_video_recorder.enabled and perspective_camera is not None:
+                        perspective_video_recorder.write_frame(
+                            camera_rgb_to_uint8(perspective_camera.data.output["rgb"])
+                        )
                     action_start_time = time.perf_counter()
                     action_cpu = predict_action(
                         observation=observation,
@@ -545,6 +694,7 @@ def main():
                 if args_cli.success_hold_steps > 0 and success_hold_count >= args_cli.success_hold_steps:
                     finish_episode(True, f"success_hold:{success_hold_count}", metrics)
                     reset_episode_state()
+                    perspective_video_recorder.start_episode(attempted_episodes + 1)
                     continue
 
                 _, _ = env.step(actions)
@@ -560,6 +710,7 @@ def main():
             f"successes={saved_successes} total_control_steps={total_control_step}",
             flush=True,
         )
+        perspective_video_recorder.close()
         env.close()
         simulation_app.close()
 
