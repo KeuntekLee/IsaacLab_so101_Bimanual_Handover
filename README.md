@@ -37,14 +37,18 @@ The repository does not include generated datasets, checkpoints, Isaac Lab logs,
 Two successful ACT inference rollouts are included as scene-wide perspective videos:
 
 ### Success rollout 01
-https://github.com/user-attachments/assets/bccccc59-c833-4020-bf94-855765abd518
 
-[Open H.264 MP4](media/so101_bimanual_handover_success_01.mp4)
+
+https://github.com/user-attachments/assets/ae708138-7c33-4e48-bc90-23a59636843e
+
+
 
 ### Success rollout 02
-https://github.com/user-attachments/assets/87b51cc0-8bcf-4889-8e74-323db5a6ffdd
 
-[Open H.264 MP4](media/so101_bimanual_handover_success_02.mp4)
+
+https://github.com/user-attachments/assets/9112f610-9299-4e30-af0f-1a91e30f918e
+
+
 
 These videos were recorded from an additional perspective camera, not from the policy input cameras. The ACT policy still uses the two gripper cameras and top camera as observations.
 
