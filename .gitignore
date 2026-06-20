@@ -7,6 +7,7 @@ env/
 
 .pytest_cache/
 .ruff_cache/
+.thumbs/
 
 logs/
 outputs/
@@ -14,6 +15,13 @@ checkpoints/
 dataset/
 datasets/
 ${data}/
+
+build/
+install/
+log/
+ros2/**/build/
+ros2/**/install/
+ros2/**/log/
 
 *.mp4
 *.parquet
