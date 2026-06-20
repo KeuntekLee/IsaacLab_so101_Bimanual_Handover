@@ -1,3 +1,11 @@
+
+
+https://github.com/user-attachments/assets/c8a856b4-f56a-434c-9a9c-480f39db47bf
+
+
+
+https://github.com/user-attachments/assets/ad5ae99a-e2fd-47b9-95ab-741c4ca46913
+
 # SO101 Bimanual Handover for Isaac Lab
 
 This repository is an overlay project for Isaac Lab. It contains the SO101 bimanual handover task, the SO-ARM101 Isaac Lab asset/config files, ACT inference script, and the ROS2/MoveIt bridge workspace used by the MoveIt-based data collection script.
